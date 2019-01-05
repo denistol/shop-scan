@@ -1,33 +1,57 @@
-
 const fs = require('fs');
 const axios = require('axios')
 const cheerio = require('cheerio')
-let pages;
-let data = [];
-let parsed = 0;
-const parsedUrl = 'https://tehnoskarb.ua/veb-kamery/c242?page=';
+const isEqual = require('lodash').isEqual
 
-let parsePage = async ()=>{
-    if(pages && parsed >= pages) return;
-    let body = await axios.get(parsedUrl+parsed).then(data=>data.data);
-    let $ = cheerio.load(body);
-    if(!pages){
-        pages = parseInt($('span.cur_page').children('span').text().match(/\d/)[0]);
-    }
-    let results = $('div.products>ul>li').map((i,el)=>{
-        return {
-            index:  i,
-            content:$(el).children('h4').find('a').attr('title'),
-            link:   $(el).children('h4').find('a').attr('href'),
-            count:parseInt($(el).children('p').text().match(/\d+/)),
+let scan = new Promise( (resolve,reject)=>{
+    const parsedUrl = 'https://tehnoskarb.ua/igrovye-pristavki/c72?page=';
+    axios.get(parsedUrl+1)
+    .then(res=>{
+        let $ = cheerio.load(res.data)
+        try{
+            return parseInt($('span.cur_page>span').text().match(/\d/)[0])
+        }catch{
+            return 1;
         }
-    }).toArray().filter(el=>el.content && el.link && el.count);
-    parsed++;
-    data = [...data,...results];
-    await parsePage();
-};
-let main = async ()=>{
-    await parsePage();
-    fs.writeFileSync('log.txt',JSON.stringify(data,null,4));
-}
-main();
+    })
+    .then(pages=>{
+        let promises = []
+        for(var i=0;i<pages;i++){
+            promises.push(axios.get(parsedUrl+i))
+        }
+        Promise.all(promises).then(pages=>{
+            return pages.map(page=>{
+                let $ = cheerio.load(page.data);
+                return $('div.products>ul>li').map( (i,el)=>{
+                    let title = $(el).children('h4').children('a').attr('title');
+                    let link = $(el).children('h4').children('a').attr('href');
+                    let count = $(el).children('p').text().toString();
+                    if(title && link && count){
+                        return {title,link,count:parseInt(count.match(/\d/)[0])}
+                    }
+                    
+                }).toArray()
+            })
+        })
+        .then(items=>resolve(items))
+    })
+});
+
+setInterval( ()=>{
+    scan.then(results=>{
+        let responseResult = [].concat(...results)
+        if(!fs.existsSync('log.json')){
+            fs.writeFileSync('log.json',JSON.stringify(responseResult,null,4)) ;
+        }
+        let fileResult = JSON.parse(fs.readFileSync('log.json'));
+        if(!isEqual( fileResult,responseResult )){
+            console.log("[ + ] CHANGES")
+        }
+        else{
+            console.log("[ + ] IS EQUAL")
+        }
+        fs.writeFileSync('log.json',JSON.stringify(responseResult,null,4)) ;
+    })
+   
+},500);
+
