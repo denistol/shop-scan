@@ -1,9 +1,10 @@
-const fs = require('fs');
+const fs = require('fs')
 const axios = require('axios')
 const cheerio = require('cheerio')
-const isEqual = require('lodash').isEqual
+const sendMessage = require('./sendMessage')
+const conf = require('./config')
 
-let scan = new Promise( (resolve,reject)=>{
+let scanTehnoskarb = new Promise( (resolve,reject)=>{
     const parsedUrl = 'https://tehnoskarb.ua/igrovye-pristavki/c72?page=';
     axios.get(parsedUrl+1)
     .then(res=>{
@@ -33,25 +34,30 @@ let scan = new Promise( (resolve,reject)=>{
                 }).toArray()
             })
         })
-        .then(items=>resolve(items))
+        .then(items=>resolve( {tehnoskarb:[].concat(...items)} ))
     })
 });
 
-setInterval( ()=>{
-    scan.then(results=>{
-        let responseResult = [].concat(...results)
-        if(!fs.existsSync('log.json')){
-            fs.writeFileSync('log.json',JSON.stringify(responseResult,null,4)) ;
-        }
-        let fileResult = JSON.parse(fs.readFileSync('log.json'));
-        if(!isEqual( fileResult,responseResult )){
-            console.log("[ + ] CHANGES")
-        }
-        else{
-            console.log("[ + ] IS EQUAL")
-        }
-        fs.writeFileSync('log.json',JSON.stringify(responseResult,null,4)) ;
+let scanTehnostock = new Promise( (resolve,reject)=>{
+    axios.get('https://technostock.com.ua/catalog/noutbuki-kompjutery-planshety/igrovye-konsoli?mode=list')
+    .then(data=>{
+        let $ = cheerio.load(data.data);
+        let links = $('ul.products-list>li>div.item-inner>div.product-image-wrapper>a').toArray();
+        let result = links.map(el=>{
+            return{
+                link:$(el).attr('href'),
+                title:$(el).attr('title')
+            }
+        })
+        resolve({tehnostock:result})
     })
-   
-},500);
+});
+let compare = (inc)=>{
+    console.log(inc)
+}
+Promise.all([scanTehnostock,scanTehnoskarb])
+.then(res=>{
+    let incomingData = JSON.stringify(res,null,4);
+    console.log(incomingData)
+})
 
